@@ -12,16 +12,36 @@ class Layer_Dense:
         self.biases = np.zeros((1, n_neurons))
     def forward(self, inputs):
         self.output = np.dot(inputs, self.weights) + self.biases
+        self.inputs = inputs   #remebering input values
+    def backward(self, dvalues): #backward pass(backpropogation)
+        #parameters gradients
+        self.dweights = np.dot(self.inputs.T, dvalues)
+        self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
+        #values gradients
+        self.dinputs = np.dot(dvalues, self.weights.T)
 
 class Activation_ReLU:
     def forward(self, inputs):
+        self.inputs = inputs   #remebering input values
         self.output = np.maximum(0, inputs)
+    def backward(self, dvalues): #backward pass(backpropogation)
+        self.dinputs = dvalues.copy()
+        self.dinputs[self.inputs <= 0] = 0
+
+
 
 class Activation_Softmax:
     def forward(self, inputs):
         exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
         probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
         self.output = probabilities
+    def backward(self, dvalues):   #backward pass(backpropogation)
+        self.dinputs = np.empty_like(dvalues)
+        for index, (single_output, single_dvalues) in enumerate(zip(self.output, dvalues)):
+            single_output = single_output.reshape(-1, 1)  #flatten output array
+            jacobian_matrix = np.diagflat(single_output) - np.dot(single_output, single_output.T)
+            self.dinputs[index] = np.dot(jacobian_matrix, single_dvalues)
+
 
 class Loss:
     def calculate(self, output, y):
@@ -41,6 +61,16 @@ class Loss_CategoricalCrossEntropy(Loss):
 
         negative_log_likelihoods = -np.log(correct_confidences)
         return negative_log_likelihoods
+    def backward(self, dvalues, y_true):    #backward pass(backpropogation)
+        samples = len(dvalues)   #number of samples
+        labels = len(dvalues[0])  #number of labels
+        if len(y_true.shape) == 1:
+            y_true = np.eye(labels)[y_true]
+
+        self.dinputs = -y_true/dvalues  #gradient calculation
+        self.dinputs = self.dinputs/samples    #gradient normalization
+
+
 
 X, y = spiral_data(samples = 100, classes = 3)
 
