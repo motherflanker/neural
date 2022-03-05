@@ -94,6 +94,54 @@ class Softmax_Activation_CategoricalCrossEntropy_Loss_Combined():
 
 
 
+X, y = spiral_data(samples=100, classes=3)
+
+dense1 = Layer_Dense(2, 3)   #inputs are just xy data in this case so the first parameter must be 2
+activation1 = Activation_ReLU()
+
+dense2 = Layer_Dense(3, 3)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
+loss_activation = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
+
+dense1.forward(X)
+activation1.forward(dense1.output)
+
+dense2.forward(activation1.output)
+loss = loss_activation.forward(dense2.output, y)
+
+#first 5 samples output
+#print(loss_activation.output[:5])
+
+print('loss:', loss)
+
+#calculate the accuracy from output of loss_activation
+predictions = np.argmax(loss_activation.output, axis=1)
+if len(y.shape) == 2:
+    y = np.argmax(y, axis=1)
+accuracy = np.mean(predictions == y)
+
+print('accuracy: ', accuracy)
+
+#backpropogation
+loss_activation.backward(loss_activation.output, y)
+dense2.backward(loss_activation.dinputs)
+activation1.backward(dense2.dinputs)
+dense1.backward(activation1.dinputs)
+
+#gradients
+print('dense1 dweights: ')
+print(dense1.dweights)
+print('dense1 dbiases: ')
+print(dense1.dbiases)
+print('dense2 dweights: ')
+print(dense2.dweights)
+print('dense2 dbiases: ')
+print(dense2.dbiases)
+
+
+
+
+
+'''
 softmax_outputs = np.array([[0.3, 0.15, 0.3],
                             [0.1, 0.6, 0.7],
                             [0.2, 0.85, 0.3]])
@@ -115,27 +163,6 @@ print('Separate:')
 print(dvalues2)
 print('Combined:')
 print(dvalues1)
-
-'''
-X, y = spiral_data(samples=100, classes=3)
-
-dense1 = Layer_Dense(2, 3)   #inputs are just xy data in this case so the first parameter must be 2
-activation1 = Activation_ReLU()
-
-dense2 = Layer_Dense(3, 3)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
-activation2 = Activation_Softmax()
-
-dense1.forward(X)
-activation1.forward(dense1.output)
-
-dense2.forward(activation1.output)
-activation2.forward(dense2.output)
-
-print(activation2.output[:5])
-
-loss_function = Loss_CategoricalCrossEntropy()
-loss = loss_function.calculate(activation2.output, y)
-print("Loss:", loss)
 
 ------------------------------------------------------------------------- 
  
