@@ -32,13 +32,14 @@ class Activation_ReLU:
 
 class Activation_Softmax:
     def forward(self, inputs):
-        exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))
-        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)
+        self.inputs = inputs
+        exp_values = np.exp(inputs - np.max(inputs, axis=1, keepdims=True))  #get the unnormalized probs
+        probabilities = exp_values / np.sum(exp_values, axis=1, keepdims=True)  #normalize them sample-wise
         self.output = probabilities
     def backward(self, dvalues):   #backward pass(backpropogation)
         self.dinputs = np.empty_like(dvalues)
         for index, (single_output, single_dvalues) in enumerate(zip(self.output, dvalues)):
-            single_output = single_output.reshape(-1, 1)  #flatten output array
+            single_output = single_output.reshape(-1, 1)
             jacobian_matrix = np.diagflat(single_output) - np.dot(single_output, single_output.T)
             self.dinputs[index] = np.dot(jacobian_matrix, single_dvalues)
 
@@ -52,6 +53,7 @@ class Loss:
 class Loss_CategoricalCrossEntropy(Loss):
     def forward(self, y_pred, y_true):
         samples = len(y_pred)
+        #clip the data to prevent division by 0
         y_pred_clipped = np.clip(y_pred, 1e-7, 1-1e-7)
 
         if len(y_true.shape) == 1:
@@ -71,8 +73,51 @@ class Loss_CategoricalCrossEntropy(Loss):
         self.dinputs = self.dinputs/samples    #gradient normalization
 
 
+class Softmax_Activation_CategoricalCrossEntropy_Loss_Combined():
+    #create softmax and loss function objects
+    def __init__(self):
+        self.activation = Activation_Softmax()
+        self.loss = Loss_CategoricalCrossEntropy()
+    #forward pass
+    def forward(self, inputs, y_true):
+        self.activation.forward(inputs) #output lvl activation
+        self.output = self.activation.output
+        return self.loss.calculate(self.output, y_true) #return the calculated loss
+    #backward pass(backpropogation)
+    def backward(self, dvalues, y_true):
+        samples = len(dvalues)
+        if len(y_true.shape) == 2:
+            y_true = np.argmax(y_true, axis=1)
+        self.dinputs = dvalues.copy()
+        self.dinputs[range(samples), y_true] -= 1   #calculate gradient
+        self.dinputs = self.dinputs / samples    #normalize it
 
-X, y = spiral_data(samples = 100, classes = 3)
+
+
+softmax_outputs = np.array([[0.3, 0.15, 0.3],
+                            [0.1, 0.6, 0.7],
+                            [0.2, 0.85, 0.3]])
+
+class_targets = np.array([0, 1, 1])
+
+softmax_loss = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
+softmax_loss.backward(softmax_outputs, class_targets)
+dvalues1 = softmax_loss.dinputs
+
+activation = Activation_Softmax()
+activation.output = softmax_outputs
+loss = Loss_CategoricalCrossEntropy()
+loss.backward(softmax_outputs, class_targets)
+activation.backward(loss.dinputs)
+dvalues2 = activation.dinputs
+
+print('Separate:')
+print(dvalues2)
+print('Combined:')
+print(dvalues1)
+
+'''
+X, y = spiral_data(samples=100, classes=3)
 
 dense1 = Layer_Dense(2, 3)   #inputs are just xy data in this case so the first parameter must be 2
 activation1 = Activation_ReLU()
@@ -92,7 +137,8 @@ loss_function = Loss_CategoricalCrossEntropy()
 loss = loss_function.calculate(activation2.output, y)
 print("Loss:", loss)
 
-'''
+------------------------------------------------------------------------- 
+ 
 weights = [[0.2, 0.8, -0.5, 1.0],
            [0.5, -0.91, 0.26, -0.5],
            [-0.26, -0.27, 0.17, 0.87]]
