@@ -124,6 +124,31 @@ class SGD_Optimizer:
         self.iterations += 1
 
 
+class AdaGrad_Optimizer:
+    def __init__(self, learning_rate=0.95, decay=0., epsilon=1e-7):
+        self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.epsilon = epsilon
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * (1. / (1. + self.decay * self.iterations))
+    def update_params(self, layer):
+        if not hasattr(layer, 'weight_cache'):   #create cache arrays
+            layer.weight_cache = np.zeros_like(layer.weights)
+            layer.bias_cache = np.zeros_like(layer.biases)
+        #update cache with current gradient squared
+        layer.weight_cache += layer.dweights ** 2
+        layer.bias_cache += layer.dbiases ** 2
+        #regular parameter update and a square root normalization
+        layer.weights += -self.current_learning_rate * layer.dweights / (np.sqrt(layer.weight_cache) + self.epsilon)
+        layer.biases += -self.current_learning_rate * layer.dbiases / (np.sqrt(layer.bias_cache) + self.epsilon)
+    def post_update_params(self):
+        self.iterations += 1
+
+
+
 X, y = spiral_data(samples=100, classes=3)
 
 dense1 = Layer_Dense(2, 64)   #inputs are just xy data in this case so the first parameter must be 2
@@ -132,7 +157,8 @@ activation1 = Activation_ReLU()
 dense2 = Layer_Dense(64, 3)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
 loss_activation = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
 
-optimizer = SGD_Optimizer(decay=1e-3, momentum=0.96)
+#optimizer = SGD_Optimizer(decay=1e-3, momentum=0.96)
+optimizer = AdaGrad_Optimizer(decay=1e-4)
 
 for epoch in range(10001):
     dense1.forward(X)
