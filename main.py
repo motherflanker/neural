@@ -173,6 +173,52 @@ class RMSprop_Optimizer:
         self.iterations += 1
 
 
+class Adam_Optimizer:
+    def __init__(self, learning_rate=0.001, decay=0., epsilon=1e-7, beta_1=0.9, beta_2=0.999):
+        self.learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.decay = decay
+        self.iterations = 0
+        self.epsilon = epsilon
+        self.beta_1 = beta_1
+        self.beta_2 = beta_2
+    def pre_update_params(self):
+        if self.decay:
+            self.current_learning_rate = self.learning_rate * (1. / (1. + self.decay * self.iterations))
+    def update_params(self, layer):
+        if not hasattr(layer, 'weight_cache'):   #create cache arrays
+            layer.weight_momentums = np.zeros_like(layer.weights)
+            layer.weight_cache = np.zeros_like(layer.weights)
+            layer.bias_momentums = np.zeros_like(layer.biases)
+            layer.bias_cache = np.zeros_like(layer.biases)
+
+        #update momentum with current gradients
+        layer.weight_momentums = self.beta_1 * layer.weight_momentums + (1 - self.beta_1) * layer.dweights
+        layer.bias_momentums = self.beta_1 * layer.bias_momentums + (1 - self.beta_1) * layer.dbiases
+
+        #get the corrected momentums
+        corrected_weight_momentums = layer.weight_momentums / (1 - self.beta_1 ** (self.iterations + 1))
+        corrected_bias_momentums = layer.bias_momentums / (1 - self.beta_1 ** (self.iterations + 1))
+
+        #update cache with current gradient squared
+        layer.weight_cache = self.beta_2 * layer.weight_cache + (1 - self.beta_2) * layer.dweights ** 2
+        layer.bias_cache = self.beta_2 * layer.bias_cache + (1 - self.beta_2) * layer.dbiases ** 2
+
+        #then get the corrected cache
+        corrected_weight_cache = layer.weight_cache / (1 - self.beta_2 ** (self.iterations + 1))
+        corrected_bias_cache = layer.bias_cache / (1 - self.beta_2 ** (self.iterations + 1))
+
+        #regular parameter update and a square root normalization
+        layer.weights += -self.current_learning_rate * corrected_weight_momentums \
+                         / (np.sqrt(corrected_weight_cache) + self.epsilon)
+        layer.biases += -self.current_learning_rate * corrected_bias_momentums \
+                         / (np.sqrt(corrected_bias_cache) + self.epsilon)
+
+    def post_update_params(self):
+        self.iterations += 1
+
+
+
 X, y = spiral_data(samples=100, classes=3)
 
 dense1 = Layer_Dense(2, 64)   #inputs are just xy data in this case so the first parameter must be 2
@@ -184,6 +230,7 @@ loss_activation = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
 #optimizer = SGD_Optimizer(decay=1e-3, momentum=0.96)
 #optimizer = AdaGrad_Optimizer(decay=1e-4)
 #optimizer = RMSprop_Optimizer(decay=1e-4)
+optimizer = Adam_Optimizer(learning_rate=0.02, decay=1e-4)
 
 for epoch in range(10001):
     dense1.forward(X)
