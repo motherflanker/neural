@@ -7,17 +7,45 @@ from nnfs.datasets import spiral_data
 nnfs.init()
 
 class Layer_Dense:
-    def __init__(self, n_inputs, n_neurons):
-        self.weights = 0.10 * np.random.randn(n_inputs, n_neurons)
+    def __init__(self, n_inputs, n_neurons,
+                 weight_regularizer_l1=0, weight_regularizer_l2=0,
+                 bias_regularizer_l1=0, bias_regularizer_l2=0):
+        #weights and biases initialization
+        self.weights = 0.01 * np.random.randn(n_inputs, n_neurons)
         self.biases = np.zeros((1, n_neurons))
+        #set the penalty strength of the regularizers
+        self.weight_regularizer_l1 = weight_regularizer_l1
+        self.weight_regularizer_l2 = weight_regularizer_l2
+        self.bias_regularizer_l1 = bias_regularizer_l1
+        self.bias_regularizer_l2 = bias_regularizer_l2
     def forward(self, inputs):
         self.output = np.dot(inputs, self.weights) + self.biases
-        self.inputs = inputs   #remebering input values
-    def backward(self, dvalues): #backward pass(backpropogation)
-        #parameters gradients
+        #remebering input values
+        self.inputs = inputs
+
+    #backward pass(backpropogation)
+    def backward(self, dvalues):
+        #Gradients on parameters
         self.dweights = np.dot(self.inputs.T, dvalues)
         self.dbiases = np.sum(dvalues, axis=0, keepdims=True)
-        #values gradients
+        #Gradients on regularization
+        #L1 on weights
+        if self.weight_regularizer_l1 > 0:
+            dL1 = np.ones_like(self.weights)
+            dL1[self.weights < 0] = -1
+            self.dweights += self.weight_regularizer_l1 * dL1
+        #L2 on weights
+        if self.weight_regularizer_l2 > 0:
+            self.dweights += 2 * self.weight_regularizer_l2 * self.weights
+        #L1 on biases
+        if self.bias_regularizer_l1 > 0:
+            dL1 = np.ones_like(self.biases)
+            dL1[self.biases < 0] = -1
+            self.dbiases += self.bias_regularizer_l1 * dL1
+        # L2 on biases
+        if self.bias_regularizer_l2 > 0:
+            self.dbiases += 2 * self.bias_regularizer_l2 * self.biases
+        # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
 
 class Activation_ReLU:
@@ -45,10 +73,29 @@ class Activation_Softmax:
 
 
 class Loss:
+    def regularization_loss(self, layer):
+
+        reg_loss = 0   #default value
+        #l1 reg for weights
+        if layer.weight_regularizer_l1 > 0:
+            reg_loss += layer.weight_regularizer_l1 * np.sum(np.abs(layer.weights))
+        #l2 reg for weights
+        if layer.weight_regularizer_l2 > 0:
+            reg_loss += layer.weight_regularizer_l2 * np.sum(layer.weights * layer.weights)
+        #l1 reg for biases
+        if layer.bias_regularizer_l1 > 0:
+            reg_loss += layer.bias_regularizer_l1 * np.sum(np.abs(layer.biases))
+        #l2 reg for biases
+        if layer.bias_regularizer_l2 > 0:
+            reg_loss += layer.bias_regularizer_l2 * np.sum(layer.biases * layer.biases)
+
+        return reg_loss
+
     def calculate(self, output, y):
         sample_losses = self.forward(output, y)
         data_loss = np.mean(sample_losses)
         return data_loss
+
 
 class Loss_CategoricalCrossEntropy(Loss):
     def forward(self, y_pred, y_true):
@@ -219,12 +266,12 @@ class Adam_Optimizer:
 
 
 
-X, y = spiral_data(samples=100, classes=3)
+X, y = spiral_data(samples=1000, classes=3)
 
-dense1 = Layer_Dense(2, 64)   #inputs are just xy data in this case so the first parameter must be 2
+dense1 = Layer_Dense(2, 128, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)   #inputs are just xy data in this case so the first parameter must be 2
 activation1 = Activation_ReLU()
 
-dense2 = Layer_Dense(64, 3)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
+dense2 = Layer_Dense(128, 3)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
 loss_activation = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
 
 #optimizer = SGD_Optimizer(decay=1e-3, momentum=0.96)
@@ -235,8 +282,15 @@ optimizer = Adam_Optimizer(learning_rate=0.02, decay=1e-4)
 for epoch in range(10001):
     dense1.forward(X)
     activation1.forward(dense1.output)
+
     dense2.forward(activation1.output)
-    loss = loss_activation.forward(dense2.output, y)
+
+    data_loss = loss_activation.forward(dense2.output, y)
+
+    regularization_loss = \
+        loss_activation.loss.regularization_loss(dense1) + \
+        loss_activation.loss.regularization_loss(dense2)
+    loss = data_loss + regularization_loss
 
     #calculate the accuracy from output of loss_activation
     predictions = np.argmax(loss_activation.output, axis=1)
@@ -244,7 +298,12 @@ for epoch in range(10001):
         y = np.argmax(y, axis=1)
     accuracy = np.mean(predictions == y)
     if not epoch % 100:
-        print(f'epoch: {epoch}, ' + f'acc: {accuracy:.3f}, ' + f'loss: {loss:.3f}, ' + f'lr: {optimizer.current_learning_rate}')
+        print(f'epoch: {epoch}, ' +
+              f'acc: {accuracy:.3f}, ' +
+              f'loss: {loss:.3f}, (' +
+              f'dataLoss: {data_loss:.3f}, ' +
+              f'regLoss: {regularization_loss:.3f}), ' +
+              f'lr: {optimizer.current_learning_rate}')
 
     #backpropogation
     loss_activation.backward(loss_activation.output, y)
@@ -258,7 +317,6 @@ for epoch in range(10001):
     optimizer.post_update_params()
 
 
-'''
     # TESTING THE MODEL || The result of testing: MODEL SUCKS ASS cuz it's obv overfitting
     X_test, y_test = spiral_data(samples=100, classes=3)
     dense1.forward(X_test)
@@ -270,7 +328,7 @@ for epoch in range(10001):
         y_test = np.argmax(y_test, axis=1)
     accuracy = np.mean(predictions == y_test)
     print(f'validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
-'''
+
 
 
 
