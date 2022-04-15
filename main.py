@@ -97,6 +97,23 @@ class Loss:
         return data_loss
 
 
+class Loss_BinaryCrossEntropy(Loss):
+    def forward(self, y_pred, y_true):
+        #clipping data so that shit doesn't get divided by 0
+        y_pred_clipped = np.clip(y_pred, 1e-7, 1-1e7)
+        sample_losses = -(y_true * np.log(y_pred_clipped) + (1 - y_true) * np.log(1 - y_pred_clipped))
+        sample_losses = np.mean(sample_losses, axis=1)
+        return sample_losses
+    def backward(self, dvalues, y_true):
+        samples = len(dvalues)
+        # number of outputs in each sample
+        outputs = len(dvalues[0])
+        #clip data again
+        clipped_dvalues = np.clip(dvalues, 1e-7, 1-1e7)
+        #calculate gradient
+        self.dinputs = -(y_true / clipped_dvalues - (1 - y_true) / (1 - clipped_dvalues)) / outputs
+        self.dinputs = self.dinputs / samples
+
 class Loss_CategoricalCrossEntropy(Loss):
     def forward(self, y_pred, y_true):
         samples = len(y_pred)
