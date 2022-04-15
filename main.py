@@ -6,6 +6,7 @@ from nnfs.datasets import spiral_data
 
 nnfs.init()
 
+
 class Layer_Dense:
     def __init__(self, n_inputs, n_neurons,
                  weight_regularizer_l1=0, weight_regularizer_l2=0,
@@ -48,13 +49,15 @@ class Layer_Dense:
         # Gradient on values
         self.dinputs = np.dot(dvalues, self.weights.T)
 
+
 class Activation_ReLU:
     def forward(self, inputs):
         self.inputs = inputs   #remebering input values
         self.output = np.maximum(0, inputs)
-    def backward(self, dvalues): #backward pass(backpropogation)
+    def backward(self, dvalues):   #backward pass(backpropogation)
         self.dinputs = dvalues.copy()
         self.dinputs[self.inputs <= 0] = 0
+
 
 class Activation_Sigmoid:
     def forward(self, inputs):
@@ -62,6 +65,7 @@ class Activation_Sigmoid:
         self.output = 1 / (1 + np.exp(-inputs))
     def backward(self, dvalues):
         self.dinputs = dvalues * (1 - self.output) * self.output
+
 
 class Activation_Softmax:
     def forward(self, inputs):
@@ -79,7 +83,6 @@ class Activation_Softmax:
 
 class Loss:
     def regularization_loss(self, layer):
-
         reg_loss = 0   #default value
         #l1 reg for weights
         if layer.weight_regularizer_l1 > 0:
@@ -93,7 +96,6 @@ class Loss:
         #l2 reg for biases
         if layer.bias_regularizer_l2 > 0:
             reg_loss += layer.bias_regularizer_l2 * np.sum(layer.biases * layer.biases)
-
         return reg_loss
 
     def calculate(self, output, y):
@@ -103,21 +105,20 @@ class Loss:
 
 
 class Loss_BinaryCrossEntropy(Loss):
+    # Forward pass
     def forward(self, y_pred, y_true):
-        #clipping data so that shit doesn't get divided by 0
-        y_pred_clipped = np.clip(y_pred, 1e-7, 1-1e7)
+        y_pred_clipped = np.clip(y_pred, 1e-7, 1 - 1e-7)
         sample_losses = -(y_true * np.log(y_pred_clipped) + (1 - y_true) * np.log(1 - y_pred_clipped))
-        sample_losses = np.mean(sample_losses, axis=1)
+        sample_losses = np.mean(sample_losses, axis=-1)
         return sample_losses
+
     def backward(self, dvalues, y_true):
         samples = len(dvalues)
-        # number of outputs in each sample
         outputs = len(dvalues[0])
-        #clip data again
-        clipped_dvalues = np.clip(dvalues, 1e-7, 1-1e7)
-        #calculate gradient
+        clipped_dvalues = np.clip(dvalues, 1e-7, 1 - 1e-7)
         self.dinputs = -(y_true / clipped_dvalues - (1 - y_true) / (1 - clipped_dvalues)) / outputs
         self.dinputs = self.dinputs / samples
+
 
 class Loss_CategoricalCrossEntropy(Loss):
     def forward(self, y_pred, y_true):
@@ -142,16 +143,16 @@ class Loss_CategoricalCrossEntropy(Loss):
         self.dinputs = self.dinputs/samples    #gradient normalization
 
 
-class Softmax_Activation_CategoricalCrossEntropy_Loss_Combined():
+class Softmax_Activation_CategoricalCrossEntropy_Loss_Combined:
     #create softmax and loss function objects
     def __init__(self):
         self.activation = Activation_Softmax()
         self.loss = Loss_CategoricalCrossEntropy()
     #forward pass
     def forward(self, inputs, y_true):
-        self.activation.forward(inputs) #output lvl activation
+        self.activation.forward(inputs)   #output lvl activation
         self.output = self.activation.output
-        return self.loss.calculate(self.output, y_true) #return the calculated loss
+        return self.loss.calculate(self.output, y_true)   #return the calculated loss
     #backward pass(backpropogation)
     def backward(self, dvalues, y_true):
         samples = len(dvalues)
@@ -288,37 +289,57 @@ class Adam_Optimizer:
 
 
 
-X, y = spiral_data(samples=1000, classes=3)
+X, y = spiral_data(samples=1000, classes=2)
 
-dense1 = Layer_Dense(2, 128, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)   #inputs are just xy data in this case so the first parameter must be 2
+y = y.reshape(-1, 1)
+
+dense1 = Layer_Dense(2, 64, weight_regularizer_l2=5e-4, bias_regularizer_l2=5e-4)   #inputs are just xy data in this case so the first parameter must be 2
+
 activation1 = Activation_ReLU()
 
-dense2 = Layer_Dense(128, 3)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
-loss_activation = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
+dense2 = Layer_Dense(64, 1)   #there is 3 outputs on the previous level so the number of inputs on the next one is 3 aswell
+
+activation2 = Activation_Sigmoid()
+
+loss_function = Loss_BinaryCrossEntropy()
+
+#loss_activation = Softmax_Activation_CategoricalCrossEntropy_Loss_Combined()
 
 #optimizer = SGD_Optimizer(decay=1e-3, momentum=0.96)
 #optimizer = AdaGrad_Optimizer(decay=1e-4)
 #optimizer = RMSprop_Optimizer(decay=1e-4)
+
 optimizer = Adam_Optimizer(learning_rate=0.02, decay=1e-4)
 
 for epoch in range(10001):
     dense1.forward(X)
     activation1.forward(dense1.output)
-
     dense2.forward(activation1.output)
+    activation2.forward(dense2.output)
+    data_loss = loss_function.calculate(activation2.output, y)
 
-    data_loss = loss_activation.forward(dense2.output, y)
+    #data_loss = loss_activation.forward(dense2.output, y)
 
     regularization_loss = \
-        loss_activation.loss.regularization_loss(dense1) + \
-        loss_activation.loss.regularization_loss(dense2)
+        loss_function.regularization_loss(dense1) + \
+        loss_function.regularization_loss(dense2)
     loss = data_loss + regularization_loss
 
+    '''regularization_loss = \
+        loss_activation.loss.regularization_loss(dense1) + \
+        loss_activation.loss.regularization_loss(dense2)
+    loss = data_loss + regularization_loss'''
+
     #calculate the accuracy from output of loss_activation
-    predictions = np.argmax(loss_activation.output, axis=1)
+    '''predictions = np.argmax(loss_activation.output, axis=1)
     if len(y.shape) == 2:
         y = np.argmax(y, axis=1)
-    accuracy = np.mean(predictions == y)
+    accuracy = np.mean(predictions == y)'''
+
+    #calculate accuracy from output of activation2
+    predictions = (activation2.output > 0.5) * 1  #binary array in the brackets returns true\false values
+    accuracy = np.mean(predictions == y)          # *1 => array of 1\0
+
     if not epoch % 100:
         print(f'epoch: {epoch}, ' +
               f'acc: {accuracy:.3f}, ' +
@@ -326,8 +347,20 @@ for epoch in range(10001):
               f'dataLoss: {data_loss:.3f}, ' +
               f'regLoss: {regularization_loss:.3f}), ' +
               f'lr: {optimizer.current_learning_rate}')
+    # binary
+    loss_function.backward(activation2.output, y)
+    activation2.backward(loss_function.dinputs)
+    dense2.backward(activation2.dinputs)
+    activation1.backward(dense2.dinputs)
+    dense1.backward(activation1.dinputs)
+    # Update weights and biases
+    optimizer.pre_update_params()
+    optimizer.update_params(dense1)
+    optimizer.update_params(dense2)
+    optimizer.post_update_params()
 
-    #backpropogation
+    '''
+    #backpropogation nonbinary
     loss_activation.backward(loss_activation.output, y)
     dense2.backward(loss_activation.dinputs)
     activation1.backward(dense2.dinputs)
@@ -336,10 +369,24 @@ for epoch in range(10001):
     optimizer.pre_update_params()
     optimizer.update_params(dense1)
     optimizer.update_params(dense2)
-    optimizer.post_update_params()
+    optimizer.post_update_params()'''
 
 
-    # TESTING THE MODEL || The result of testing: MODEL SUCKS ASS cuz it's obv overfitting
+
+    # TESTING THE MODEL || binary
+    X_test, y_test = spiral_data(samples=100, classes=2)
+    y_test = y_test.reshape(-1, 1)
+    dense1.forward(X_test)
+    activation1.forward(dense1.output)
+    dense2.forward(activation1.output)
+    activation2.forward(dense2.output)
+    loss = loss_function.calculate(activation2.output, y_test)
+    predictions = (activation2.output > 0.5) * 1
+    accuracy = np.mean(predictions == y_test)
+    print(f'validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
+
+'''
+    # TESTING THE MODEL || nonbinary
     X_test, y_test = spiral_data(samples=100, classes=3)
     dense1.forward(X_test)
     activation1.forward(dense1.output)
@@ -350,8 +397,7 @@ for epoch in range(10001):
         y_test = np.argmax(y_test, axis=1)
     accuracy = np.mean(predictions == y_test)
     print(f'validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
-
-
+'''
 
 
 
