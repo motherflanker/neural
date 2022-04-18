@@ -6,6 +6,7 @@ import cv2
 import os
 import pickle
 import copy
+import  matplotlib.pyplot as plt
 
 nnfs.init()
 
@@ -67,8 +68,21 @@ class Model:
             model = pickle.load(f)
         return model
 
-
-
+    def predict(self, X, *, batch_size=None):
+        prediction_steps = 1
+        if batch_size is not None:
+            prediction_steps = len(X) // batch_size
+            if prediction_steps * batch_size < len(X):
+                prediction_steps += 1
+        output = []
+        for step in range(prediction_steps):
+            if batch_size is None:
+                batch_X = X
+            else:
+                batch_X = X[step * batch_size: (step + 1) * batch_size]
+            batch_output = self.forward(batch_X, training=False)
+            output.append(batch_output)
+        return np.vstack(output)
 
     def train(self, X, y, *, epochs=1, print_every=1, validation_data=None, batch_size=None):
         self.accuracy.init(y)
@@ -636,6 +650,42 @@ def create_data(path):
 
 
 
+
+fashion_mnist_labels = {
+    0: 'T-shirt/top',
+    1: 'Trouser',
+    2: 'Pullover',
+    3: 'Dress',
+    4: 'Coat',
+    5: 'Sandal',
+    6: 'Shirt',
+    7: 'Sneaker',
+    8: 'Bag',
+    9: 'Ankle boot'
+}
+
+
+image_data = cv2.imread('dress.png', cv2.IMREAD_GRAYSCALE)
+image_data = cv2.resize(image_data, (28, 28))
+plt.imshow(image_data, cmap='gray')
+plt.show()
+image_data = 255 - image_data
+image_data = (image_data.reshape(1, -1).astype(np.float32) - 127.5) / 127.5
+
+
+model = Model.load_model('fm.model')
+
+predictions = model.predict(image_data)
+predictions = model.output_layer_activation.predictions(predictions)
+
+prediction = fashion_mnist_labels[predictions[0]]
+
+print(prediction)
+
+
+
+'''
+#loading the model that was saved before
 X, y, X_test, y_test = create_data('fashion_mnist_images')
 keys = np.array(range(X.shape[0]))
 np.random.shuffle(keys)
@@ -651,7 +701,8 @@ model = Model.load_model('fm.model')
 model.evaluate(X_test, y_test)
 
 
-'''
+
+#training the model, then creating new one with the pld ones params and saving it
 X, y, X_test, y_test = create_data('fashion_mnist_images')
 
 keys = np.array(range(X.shape[0]))
@@ -706,10 +757,6 @@ model.evaluate(X_test, y_test)
 
 model.save_model('fm.model')
 '''
-
-
-
-
 
 
 
